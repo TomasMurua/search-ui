@@ -5,6 +5,7 @@ const App = () => {
   const [image, setImage] = useState(null);
   const [ocrResult, setOcrResult] = useState({ text: "", words: [] });
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
   const imageRef = useRef(null);
 
   const handleImageChange = (e) => {
@@ -23,6 +24,26 @@ const App = () => {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
+    performSearch(searchTerm);
+  };
+
+  const performSearch = async (term) => {
+    const response = await fetch("http://localhost:9200/mi_indice/_search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: {
+          match: {
+            text_content: term,
+          },
+        },
+      }),
+    });
+
+    const data = await response.json();
+    setSearchResults(data.hits.hits);
   };
 
   const calculateBoundingBox = (
@@ -56,6 +77,11 @@ const App = () => {
       };
     }
   }, [image]);
+
+  const highlightSearchTerm = (text, term) => {
+    const regex = new RegExp(`(${term})`, "gi");
+    return text.replace(regex, "<b>$1</b>");
+  };
 
   return (
     <div style={{ fontFamily: "Helvetica, Arial, sans-serif" }}>
@@ -159,26 +185,79 @@ const App = () => {
           Search
         </button>
       </form>
-      {searchTerm && ocrResult.text && (
+      {searchResults.length > 0 && (
         <div style={{ padding: "0 20px" }}>
           <h2>Resultados</h2>
-          <div style={{ whiteSpace: "pre-wrap" }}>
-            {ocrResult.text.split("\n").map((line, index) => (
-              <span key={index} style={{ display: "block" }}>
-                {line
-                  .split(new RegExp(`(${searchTerm})`, "gi"))
-                  .map((part, index) =>
-                    part.toLowerCase() === searchTerm.toLowerCase() ? (
-                      <mark key={index} style={{ backgroundColor: "yellow" }}>
-                        {part}
-                      </mark>
-                    ) : (
-                      part
-                    )
-                  )}
-              </span>
+          <ul>
+            {searchResults.map((result) => (
+              <li key={result._id}>
+                <h3>{result._source.name}</h3>
+                <p
+                  dangerouslySetInnerHTML={{
+                    __html: highlightSearchTerm(
+                      result._source.text_content,
+                      searchTerm
+                    ),
+                  }}
+                ></p>
+                <a
+                  href={result._source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Ver imagen
+                </a>
+                <div
+                  style={{
+                    position: "relative",
+                    marginTop: "10px",
+                    display: "inline-block",
+                  }}
+                >
+                  <img
+                    src={result._source.url}
+                    alt={result._source.name}
+                    ref={imageRef}
+                    style={{
+                      border: "1px solid #ddd",
+                      borderRadius: "4px",
+                      maxWidth: "100%",
+                      maxHeight: "400px",
+                      height: "auto",
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: "100%",
+                      pointerEvents: "none",
+                    }}
+                  >
+                    {ocrResult.words.map(
+                      (word, index) =>
+                        word.text
+                          .toLowerCase()
+                          .includes(searchTerm.toLowerCase()) && (
+                          <div
+                            key={index}
+                            style={calculateBoundingBox(
+                              word,
+                              imageRef.current.naturalWidth,
+                              imageRef.current.naturalHeight,
+                              imageRef.current.clientWidth,
+                              imageRef.current.clientHeight
+                            )}
+                          />
+                        )
+                    )}
+                  </div>
+                </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       )}
     </div>
